@@ -835,7 +835,7 @@ func main() {
 
 	router.HandleFunc("/notebooks", postNotebook).Methods("POST")
 	router.HandleFunc("/notebooks/{id}", removeNotebookByID).Methods("DELETE")
-	router.HandleFunc("/notebooks/{notebookID}/notes", postNote).Methods("POST")
+	router.HandleFunc("/notebook/{notebookID}/notes", postNote).Methods("POST")
 	router.HandleFunc("/notebooks/{notebookID}/notes/{noteID}", removeNoteByID).Methods("DELETE")
 	router.HandleFunc("/notebooks/{notebookID}/lastaccess", updateLastAccess).Methods("POST")
 	router.HandleFunc("/notebooks/{notebookID}/data", getDataByNotebookID).Methods("GET")
