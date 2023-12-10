@@ -610,6 +610,29 @@ func removeAllNotebooks(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusOK)
 }
 
+// getAllNotesByNotebookID gets all notes of a notebook by ID
+func getAllNotesByNotebookID(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+
+	params := mux.Vars(r)
+	notebookID := params["notebookID"]
+
+	objectID, err := primitive.ObjectIDFromHex(notebookID)
+	if err != nil {
+		http.Error(w, "Invalid Notebook ID format", http.StatusBadRequest)
+		return
+	}
+
+	var notebook Notebook
+	collection := client.Database("testdb").Collection("notebooks")
+	err = collection.FindOne(context.Background(), bson.M{"_id": objectID}).Decode(&notebook)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusNotFound)
+		return
+	}
+
+	json.NewEncoder(w).Encode(notebook.Notes)
+}
 func removeAllData(w http.ResponseWriter, r *http.Request) {
 	collection := client.Database("testdb").Collection("notebooks")
 	update := bson.M{"$set": bson.M{"notes.$[].data": Data{}}}
@@ -853,7 +876,7 @@ func main() {
 	router.HandleFunc("/notebooks/{notebookID}/notes/{noteID}", getNoteByID).Methods("GET")
 	router.HandleFunc("/notebooks/{notebookID}/notes/{noteID}/text", patchUpdateNoteText).Methods("PATCH")
 	router.HandleFunc("/notebooks/{notebookID}/notes/{noteID}/alldata", getAllDataByNoteID).Methods("GET")
-
+	router.HandleFunc("/notebooks/{notebookID}/notes", getAllNotesByNotebookID).Methods("GET")
 	// CORS setup
 	corsHandler := cors.New(cors.Options{
 		AllowedOrigins:   []string{"*"}, // Update with your allowed origins
