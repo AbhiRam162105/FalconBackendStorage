@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/gorilla/mux"
+	"github.com/rs/cors"
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/bson/primitive"
 	"go.mongodb.org/mongo-driver/mongo"
@@ -844,9 +845,7 @@ func main() {
 	router.HandleFunc("/notebooks/{notebookID}/notes/{noteID}/data", removeDataByNoteAndID).Methods("DELETE")
 	router.HandleFunc("/notebooks/{notebookID}/data", removeDataByNotebookID).Methods("DELETE")
 	router.HandleFunc("/notebooks/removeAll", removeAllNotebooks).Methods("DELETE")
-	//notebook
 	router.HandleFunc("/notebooks/removeAllData", removeAllData).Methods("DELETE")
-	//notebook
 	router.HandleFunc("/notebooks/{id}/data", patchUpdateNotebookData).Methods("PATCH")
 	router.HandleFunc("/notebooks/{notebookID}/notes/{noteID}/data", patchUpdateNoteData).Methods("PATCH")
 	router.HandleFunc("/notebooks/{notebookID}/notes/{noteID}/title", patchUpdateNoteTitle).Methods("PATCH")
@@ -855,5 +854,16 @@ func main() {
 	router.HandleFunc("/notebooks/{notebookID}/notes/{noteID}/text", patchUpdateNoteText).Methods("PATCH")
 	router.HandleFunc("/notebooks/{notebookID}/notes/{noteID}/alldata", getAllDataByNoteID).Methods("GET")
 
-	log.Fatal(http.ListenAndServe(":8000", router))
+	// CORS setup
+	corsHandler := cors.New(cors.Options{
+		AllowedOrigins:   []string{"*"}, // Update with your allowed origins
+		AllowedMethods:   []string{"GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"},
+		AllowedHeaders:   []string{"*"},
+		AllowCredentials: true,
+	})
+
+	// Wrap the router with the CORS handler
+	handler := corsHandler.Handler(router)
+
+	log.Fatal(http.ListenAndServe(":8000", handler))
 }
