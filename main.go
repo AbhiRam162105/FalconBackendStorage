@@ -694,12 +694,12 @@ func removeDataByNoteAndID(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusOK)
 }
 
-func getNoteByID(w http.ResponseWriter, r *http.Request) {
+func getNoteByTitle(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 
 	params := mux.Vars(r)
 	notebookID := params["notebookID"]
-	noteID := params["noteID"]
+	noteTitle := params["noteTitle"]
 
 	notebookObjectID, err := primitive.ObjectIDFromHex(notebookID)
 	if err != nil {
@@ -707,24 +707,29 @@ func getNoteByID(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	noteObjectID, err := primitive.ObjectIDFromHex(noteID)
-	if err != nil {
-		http.Error(w, "Invalid Note ID format", http.StatusBadRequest)
-		return
-	}
-
 	var noteData struct {
 		ID    primitive.ObjectID `json:"id,omitempty" bson:"_id,omitempty"`
 		Title string             `json:"title,omitempty" bson:"title,omitempty"`
 		Text  string             `json:"text,omitempty" bson:"text,omitempty"`
+		Data  Data               `json:"data,omitempty" bson:"data,omitempty"`
 	}
 
 	collection := client.Database("testdb").Collection("notebooks")
 
+	// Define the projection
+	projection := bson.M{
+		"_id":         1,
+		"notes.$":     1, // Include the entire notes array
+		"notes.text":  1, // Include the text field from notes
+		"notes.title": 1, // Include the title field from notes
+		"notes.data":  1, // Include the data field from notes
+		"notes.id":    1, // Include the id field from notes
+	}
+
 	err = collection.FindOne(
 		context.Background(),
-		bson.M{"_id": notebookObjectID, "notes._id": noteObjectID},
-		options.FindOne().SetProjection(bson.M{"notes.$.title": 1, "notes.$.text": 1}),
+		bson.M{"_id": notebookObjectID, "notes.title": noteTitle},
+		options.FindOne().SetProjection(projection),
 	).Decode(&noteData)
 
 	if err != nil {
@@ -741,17 +746,11 @@ func patchUpdateNoteText(w http.ResponseWriter, r *http.Request) {
 
 	params := mux.Vars(r)
 	notebookID := params["notebookID"]
-	noteID := params["noteID"]
+	noteTitle := params["noteTitle"]
 
 	notebookObjectID, err := primitive.ObjectIDFromHex(notebookID)
 	if err != nil {
 		http.Error(w, "Invalid Notebook ID format", http.StatusBadRequest)
-		return
-	}
-
-	noteObjectID, err := primitive.ObjectIDFromHex(noteID)
-	if err != nil {
-		http.Error(w, "Invalid Note ID format", http.StatusBadRequest)
 		return
 	}
 
@@ -775,7 +774,7 @@ func patchUpdateNoteText(w http.ResponseWriter, r *http.Request) {
 
 	result, err := collection.UpdateOne(
 		context.Background(),
-		bson.M{"_id": notebookObjectID, "notes._id": noteObjectID},
+		bson.M{"_id": notebookObjectID, "notes.title": noteTitle},
 		update,
 	)
 
@@ -793,7 +792,7 @@ func patchUpdateNoteText(w http.ResponseWriter, r *http.Request) {
 	var updatedNote Note
 	err = collection.FindOne(
 		context.Background(),
-		bson.M{"_id": notebookObjectID, "notes._id": noteObjectID},
+		bson.M{"_id": notebookObjectID, "notes.title": noteTitle},
 	).Decode(&updatedNote)
 
 	if err != nil {
@@ -873,8 +872,8 @@ func main() {
 	router.HandleFunc("/notebooks/{notebookID}/notes/{noteID}/data", patchUpdateNoteData).Methods("PATCH")
 	router.HandleFunc("/notebooks/{notebookID}/notes/{noteID}/title", patchUpdateNoteTitle).Methods("PATCH")
 	router.HandleFunc("/notebooks/{notebookID}/lastaccessdate", getLastAccessDate).Methods("GET")
-	router.HandleFunc("/notebooks/{notebookID}/notes/{noteID}", getNoteByID).Methods("GET")
-	router.HandleFunc("/notebooks/{notebookID}/notes/{noteID}/text", patchUpdateNoteText).Methods("PATCH")
+	router.HandleFunc("/notebooks/{notebookID}/notes/{noteTitle}", getNoteByTitle).Methods("GET")
+	router.HandleFunc("/notebooks/{notebookID}/notes/{noteTitle}/text", patchUpdateNoteText).Methods("PATCH")
 	router.HandleFunc("/notebooks/{notebookID}/notes/{noteID}/alldata", getAllDataByNoteID).Methods("GET")
 	router.HandleFunc("/notebooks/{notebookID}/notes", getAllNotesByNotebookID).Methods("GET")
 	// CORS setup
