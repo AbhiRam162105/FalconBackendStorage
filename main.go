@@ -20,6 +20,12 @@ type Query struct {
 	Response string `json:"response,omitempty" bson:"response,omitempty"`
 }
 
+type NewNote struct {
+	Title string `json:"title,omitempty"`
+	Text  string `json:"text,omitempty"`
+	Data  Data   `json:"data,omitempty"`
+}
+
 type Data struct {
 	ID      primitive.ObjectID `json:"id,omitempty" bson:"_id,omitempty"`
 	Info    string             `json:"info,omitempty" bson:"info,omitempty"`
@@ -451,11 +457,18 @@ func postNote(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var note Note
-	err = json.NewDecoder(r.Body).Decode(&note)
+	var newNote NewNote
+	err = json.NewDecoder(r.Body).Decode(&newNote)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
+	}
+
+	// Create a Note from the NewNote structure
+	note := Note{
+		Title: newNote.Title,
+		Text:  newNote.Text,
+		Data:  newNote.Data,
 	}
 
 	collection := client.Database("testdb").Collection("notebooks")
@@ -468,7 +481,6 @@ func postNote(w http.ResponseWriter, r *http.Request) {
 
 	json.NewEncoder(w).Encode(note)
 }
-
 func removeNoteByID(w http.ResponseWriter, r *http.Request) {
 	params := mux.Vars(r)
 	notebookID := params["notebookID"]
@@ -858,7 +870,7 @@ func main() {
 
 	router.HandleFunc("/notebooks", postNotebook).Methods("POST")
 	router.HandleFunc("/notebooks/{id}", removeNotebookByID).Methods("DELETE")
-	router.HandleFunc("/notebook/{notebookID}/notes", postNote).Methods("POST")
+	router.HandleFunc("/notebook/{notebookID}", postNote).Methods("POST")
 	router.HandleFunc("/notebooks/{notebookID}/notes/{noteID}", removeNoteByID).Methods("DELETE")
 	router.HandleFunc("/notebooks/{notebookID}/lastaccess", updateLastAccess).Methods("POST")
 	router.HandleFunc("/notebooks/{notebookID}/data", getDataByNotebookID).Methods("GET")
