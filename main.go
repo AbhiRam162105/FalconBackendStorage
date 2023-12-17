@@ -13,46 +13,161 @@ import (
 	"go.mongodb.org/mongo-driver/bson/primitive"
 	"go.mongodb.org/mongo-driver/mongo"
 	"go.mongodb.org/mongo-driver/mongo/options"
+	"golang.org/x/crypto/bcrypt"
 )
 
+// MongoDB configuration
+var mongoURI = "mongodb+srv://abhiyanampally:aBHIRAMY@cluster0.erhdu89.mongodb.net/"
+var dbName = "testdb"
+var userCollectionName = "notebooks"
+
 type Query struct {
-	Question string `json:"question,omitempty" bson:"question,omitempty"`
-	Response string `json:"response,omitempty" bson:"response,omitempty"`
+	Question string `json:"question " bson:"question "`
+	Response string `json:"response " bson:"response "`
 }
 
 type NewNote struct {
-	Title string `json:"title,omitempty"`
-	Text  string `json:"text,omitempty"`
-	Data  Data   `json:"data,omitempty"`
+	Title string `json:"title "`
+	Text  string `json:"text "`
+	Data  Data   `json:"data "`
 }
 
 type Data struct {
-	ID      primitive.ObjectID `json:"id,omitempty" bson:"_id,omitempty"`
-	Info    string             `json:"info,omitempty" bson:"info,omitempty"`
-	Queries []Query            `json:"queries,omitempty" bson:"queries,omitempty"`
+	ID      primitive.ObjectID `json:"id " bson:"_id "`
+	Info    string             `json:"info " bson:"info "`
+	Queries []Query            `json:"queries " bson:"queries "`
 }
 
 type Note struct {
-	ID    primitive.ObjectID `json:"id,omitempty" bson:"_id,omitempty"`
-	Title string             `json:"title,omitempty" bson:"title,omitempty"`
-	Text  string             `json:"text,omitempty" bson:"text,omitempty"`
-	Data  Data               `json:"data,omitempty" bson:"data,omitempty"`
+	ID    primitive.ObjectID `json:"id " bson:"_id "`
+	Title string             `json:"title " bson:"title "`
+	Text  string             `json:"text " bson:"text "`
+	Data  Data               `json:"data " bson:"data "`
+}
+
+type User_Data struct {
+	Username  string `json:"username" bson:"username"`
+	Password  string `json:"password" bson:"password"`
+	FirstName string `json:"firstName" bson:"firstName"`
+	LastName  string `json:"lastName" bson:"lastName"`
 }
 
 type Notebook struct {
-	ID         primitive.ObjectID `json:"id,omitempty" bson:"_id,omitempty"`
-	Title      string             `json:"title,omitempty" bson:"title,omitempty"`
-	Notes      []Note             `json:"notes,omitempty" bson:"notes,omitempty"`
-	Created    time.Time          `json:"created,omitempty" bson:"created,omitempty"`
-	LastAccess time.Time          `json:"lastAccess,omitempty" bson:"lastAccess,omitempty"`
-	Data       Data               `json:"data,omitempty" bson:"data,omitempty"`
+	ID         primitive.ObjectID `json:"id " bson:"_id "`
+	User_Data  User_Data          `json:"user_data " bson:"user_data "`
+	Title      string             `json:"title " bson:"title "`
+	Notes      []Note             `json:"notes " bson:"notes "`
+	Created    time.Time          `json:"created " bson:"created "`
+	LastAccess time.Time          `json:"lastAccess " bson:"lastAccess "`
+	Data       Data               `json:"data " bson:"data "`
 }
 
 var client *mongo.Client
 
+func SignUpHandler(w http.ResponseWriter, r *http.Request) {
+	var user User_Data
+	err := json.NewDecoder(r.Body).Decode(&user)
+	if err != nil {
+		respondWithError(w, http.StatusBadRequest, "Invalid request payload")
+		return
+	}
+
+	// Check if the user with the given email already exists
+	collection := client.Database(dbName).Collection(userCollectionName)
+	existingUser := User_Data{}
+	err = collection.FindOne(context.Background(), bson.M{"username": user.Username}).Decode(&existingUser)
+	if err == nil {
+		respondWithError(w, http.StatusConflict, "Account already exists with the provided username")
+		return
+	}
+
+	// Hash the password before storing it
+	hashedPassword, err := bcrypt.GenerateFromPassword([]byte(user.Password), bcrypt.DefaultCost)
+	if err != nil {
+		respondWithError(w, http.StatusInternalServerError, "Error hashing password")
+		return
+	}
+
+	user.Password = string(hashedPassword)
+
+	// Insert the user into the database
+	_, err = collection.InsertOne(context.Background(), user)
+	if err != nil {
+		respondWithError(w, http.StatusInternalServerError, "Error inserting user into database")
+		return
+	}
+
+	respondWithJSON(w, http.StatusCreated, map[string]string{"message": "User created successfully"})
+}
+
+func respondWithError(w http.ResponseWriter, code int, message string) {
+	respondWithJSON(w, code, map[string]string{"error": message})
+}
+
+func respondWithJSON(w http.ResponseWriter, code int, payload interface{}) {
+	response, err := json.Marshal(payload)
+	if err != nil {
+		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(code)
+	w.Write(response)
+}
+
+func LoginHandler(w http.ResponseWriter, r *http.Request) {
+	var credentials struct {
+		Username string `json:"username"`
+		Password string `json:"password"`
+	}
+
+	err := json.NewDecoder(r.Body).Decode(&credentials)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	// Find the user by username
+	collection := client.Database(dbName).Collection(userCollectionName)
+	var user User_Data
+	err = collection.FindOne(context.Background(), bson.M{"username": credentials.Username}).Decode(&user)
+	if err != nil {
+		http.Error(w, "Invalid username or password", http.StatusUnauthorized)
+		return
+	}
+
+	// Compare the hashed password
+	err = bcrypt.CompareHashAndPassword([]byte(user.Password), []byte(credentials.Password))
+	if err != nil {
+		http.Error(w, "Invalid username or password", http.StatusUnauthorized)
+		return
+	}
+
+	// Respond with success and user details
+	response := map[string]interface{}{
+		"status": "success",
+		"user": map[string]interface{}{
+			"username":  user.Username,
+			"firstName": user.FirstName,
+			"lastName":  user.LastName,
+			// Add other user details as needed
+		},
+	}
+
+	jsonResponse, err := json.Marshal(response)
+	if err != nil {
+		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	w.Write(jsonResponse)
+}
+
 func getAllNotebooks(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
-
 	var notebooks []Notebook
 	collection := client.Database("testdb").Collection("notebooks")
 	cursor, err := collection.Find(context.Background(), bson.M{})
@@ -133,9 +248,9 @@ func getNotebookByTitle(w http.ResponseWriter, r *http.Request) {
 	}
 
 	result := struct {
-		ID         primitive.ObjectID `json:"id,omitempty" bson:"_id,omitempty"`
-		Title      string             `json:"title,omitempty" bson:"title,omitempty"`
-		LastAccess time.Time          `json:"lastAccess,omitempty" bson:"lastAccess,omitempty"`
+		ID         primitive.ObjectID `json:"id " bson:"_id "`
+		Title      string             `json:"title " bson:"title "`
+		LastAccess time.Time          `json:"lastAccess " bson:"lastAccess "`
 	}{ID: notebook.ID, Title: notebook.Title, LastAccess: notebook.LastAccess}
 
 	json.NewEncoder(w).Encode(result)
@@ -198,8 +313,8 @@ func postNotebook(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 
 	var notebookReq struct {
-		Title string `json:"title,omitempty"`
-		Notes []Note `json:"notes,omitempty"`
+		Title string `json:"title "`
+		Notes []Note `json:"notes "`
 	}
 
 	err := json.NewDecoder(r.Body).Decode(&notebookReq)
@@ -249,7 +364,7 @@ func getLastAccessDate(w http.ResponseWriter, r *http.Request) {
 	}
 
 	response := struct {
-		LastAccess time.Time `json:"lastAccess,omitempty" bson:"lastAccess,omitempty"`
+		LastAccess time.Time `json:"lastAccess " bson:"lastAccess "`
 	}{LastAccess: notebook.LastAccess}
 
 	json.NewEncoder(w).Encode(response)
@@ -289,7 +404,7 @@ func updateLastAccess(w http.ResponseWriter, r *http.Request) {
 	}
 
 	response := struct {
-		LastAccess time.Time `json:"lastAccess,omitempty" bson:"lastAccess,omitempty"`
+		LastAccess time.Time `json:"lastAccess " bson:"lastAccess "`
 	}{LastAccess: updatedNotebook.LastAccess}
 
 	json.NewEncoder(w).Encode(response)
@@ -310,15 +425,15 @@ func patchUpdateNotebookData(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var dataPatch struct {
-		Title      *string    `json:"title,omitempty"`
-		Notes      []Note     `json:"notes,omitempty"`
-		Created    *time.Time `json:"created,omitempty"`
-		LastAccess *time.Time `json:"lastAccess,omitempty"`
+		Title      *string    `json:"title "`
+		Notes      []Note     `json:"notes "`
+		Created    *time.Time `json:"created "`
+		LastAccess *time.Time `json:"lastAccess "`
 		Data       struct {
-			Info    string  `json:"info,omitempty"`
-			Queries []Query `json:"queries,omitempty"`
-			Notes   []Note  `json:"notes,omitempty"`
-		} `json:"data,omitempty"`
+			Info    string  `json:"info "`
+			Queries []Query `json:"queries "`
+			Notes   []Note  `json:"notes "`
+		} `json:"data "`
 	}
 
 	err = json.NewDecoder(r.Body).Decode(&dataPatch)
@@ -385,7 +500,7 @@ func patchUpdateNoteTitle(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var noteTitle struct {
-		Title string `json:"title,omitempty"`
+		Title string `json:"title "`
 	}
 
 	err = json.NewDecoder(r.Body).Decode(&noteTitle)
@@ -720,10 +835,10 @@ func getNoteByTitle(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var noteData struct {
-		ID    primitive.ObjectID `json:"id,omitempty" bson:"_id,omitempty"`
-		Title string             `json:"title,omitempty" bson:"title,omitempty"`
-		Text  string             `json:"text,omitempty" bson:"text,omitempty"`
-		Data  Data               `json:"data,omitempty" bson:"data,omitempty"`
+		ID    primitive.ObjectID `json:"id " bson:"_id "`
+		Title string             `json:"title " bson:"title "`
+		Text  string             `json:"text " bson:"text "`
+		Data  Data               `json:"data " bson:"data "`
 	}
 
 	collection := client.Database("testdb").Collection("notebooks")
@@ -767,7 +882,7 @@ func patchUpdateNoteText(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var newText struct {
-		Text string `json:"text,omitempty"`
+		Text string `json:"text "`
 	}
 
 	err = json.NewDecoder(r.Body).Decode(&newText)
@@ -888,6 +1003,10 @@ func main() {
 	router.HandleFunc("/notebooks/{notebookID}/notes/{noteTitle}/text", patchUpdateNoteText).Methods("PATCH")
 	router.HandleFunc("/notebooks/{notebookID}/notes/{noteID}/alldata", getAllDataByNoteID).Methods("GET")
 	router.HandleFunc("/notebooks/{notebookID}/notes", getAllNotesByNotebookID).Methods("GET")
+
+	router.HandleFunc("/signup", SignUpHandler).Methods("POST")
+	router.HandleFunc("/login", LoginHandler).Methods("POST")
+
 	// CORS setup
 	corsHandler := cors.New(cors.Options{
 		AllowedOrigins:   []string{"*"}, // Update with your allowed origins
