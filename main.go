@@ -1018,5 +1018,5 @@ func main() {
 	// Wrap the router with the CORS handler
 	handler := corsHandler.Handler(router)
 
-	log.Fatal(http.ListenAndServe(":8000", handler))
+	log.Fatal(http.ListenAndServe(":8080", handler))
 }
